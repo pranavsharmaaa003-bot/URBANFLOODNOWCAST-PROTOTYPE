@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NIRMAAN — Urban Flood Nowcasting System</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg-0:#0a0e16;
+    --bg-1:#0f1522;
+    --bg-2:#141c2e;
+    --bg-3:#1a2438;
+    --line:#26324a;
+    --text-hi:#eef1f7;
+    --text-mid:#aab4c8;
+    --text-lo:#6b768e;
+    --teal:#3ad6c9;
+    --teal-dim:#1f5c58;
+    --low:#33c17a;
+    --mod:#e3b545;
+    --high:#e8823a;
+    --crit:#e0483f;
+    --mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%; background:var(--bg-0); color:var(--text-hi); font-family:var(--sans); overflow:hidden;}
+  ::-webkit-scrollbar{width:8px; height:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--line); border-radius:4px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+
+  #app{height:100vh; display:flex; flex-direction:column;}
+
+  /* ---------- HEADER ---------- */
+  header{
+    height:56px; flex:0 0 56px;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 18px; background:var(--bg-1); border-bottom:1px solid var(--line);
+    z-index:1000;
+  }
+  .brand{display:flex; align-items:center; gap:12px;}
+  .brand-mark{
+    width:34px; height:34px; border-radius:8px; background:linear-gradient(160deg,var(--teal),#1f8f85);
+    display:flex; align-items:center; justify-content:center; font-weight:800; color:#04211d; font-size:15px;
+    flex-shrink:0;
+  }
+  .brand-text h1{font-size:15px; font-weight:700; letter-spacing:0.3px; line-height:1.1;}
+  .brand-text p{font-size:10.5px; color:var(--text-mid); letter-spacing:0.3px; margin-top:1px;}
+  nav.tabs{display:flex; gap:2px; background:var(--bg-2); padding:3px; border-radius:8px; border:1px solid var(--line);}
+  nav.tabs button{
+    background:transparent; border:none; color:var(--text-mid); font-family:var(--sans); font-weight:600;
+    font-size:12.5px; padding:7px 14px; border-radius:6px; cursor:pointer; transition:background .15s, color .15s;
+  }
+  nav.tabs button.active{background:var(--bg-3); color:var(--text-hi);}
+  nav.tabs button:hover:not(.active){color:var(--text-hi);}
+  .status-block{display:flex; align-items:center; gap:16px; font-family:var(--mono);}
+  .status-pill{
+    display:flex; align-items:center; gap:7px; font-size:11px; color:var(--low); font-weight:600;
+    padding:5px 10px; border:1px solid var(--teal-dim); border-radius:6px; background:rgba(51,193,122,0.08);
+  }
+  .status-dot{width:7px; height:7px; border-radius:50%; background:var(--low); box-shadow:0 0 6px var(--low); animation:pulse 2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;} 50%{opacity:.4;}}
+  .status-time{font-size:11px; color:var(--text-mid); text-align:right; line-height:1.5;}
+  .status-time b{color:var(--text-hi); font-weight:600;}
+
+  /* ---------- LAYOUT ---------- */
+  .view{flex:1; display:none; min-height:0;}
+  .view.active{display:flex;}
+  #dashboard-view{}
+
+  .panel{
+    background:var(--bg-1); border:1px solid var(--line); border-radius:10px;
+  }
+  .panel-head{
+    padding:11px 14px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between;
+  }
+  .panel-head h3{font-size:11.5px; font-weight:700; letter-spacing:0.6px; color:var(--text-mid); text-transform:uppercase;}
+  .panel-body{padding:14px;}
+
+  /* ---------- LEFT SIDEBAR ---------- */
+  #left-sidebar{
+    width:280px; flex:0 0 280px; padding:12px; display:flex; flex-direction:column; gap:12px;
+    overflow-y:auto; border-right:1px solid var(--line); background:var(--bg-0);
+  }
+  .field{margin-bottom:12px;}
+  .field:last-child{margin-bottom:0;}
+  .field label{font-size:11px; color:var(--text-mid); font-weight:600; display:flex; justify-content:space-between; margin-bottom:7px;}
+  .field label span.val{color:var(--teal); font-family:var(--mono); font-weight:700;}
+  select, .seg-group{width:100%;}
+  select{
+    width:100%; background:var(--bg-2); color:var(--text-hi); border:1px solid var(--line); border-radius:6px;
+    padding:8px 10px; font-family:var(--sans); font-size:12.5px; font-weight:500;
+  }
+  input[type=range]{
+    width:100%; accent-color:var(--teal); height:4px; background:var(--bg-2);
+  }
+  .seg-group{display:flex; gap:4px; background:var(--bg-2); border-radius:6px; padding:3px; border:1px solid var(--line);}
+  .seg-group button{
+    flex:1; background:transparent; border:none; color:var(--text-mid); font-size:11px; font-weight:600;
+    padding:7px 4px; border-radius:4px; cursor:pointer; font-family:var(--sans);
+  }
+  .seg-group button.active{background:var(--bg-3); color:var(--text-hi);}
+  .toggle-row{display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-top:1px solid var(--line);}
+  .toggle-row:first-of-type{border-top:none;}
+  .toggle-row span{font-size:12px; color:var(--text-hi); font-weight:500;}
+  .switch{position:relative; width:36px; height:20px; flex-shrink:0;}
+  .switch input{opacity:0; width:0; height:0;}
+  .slider-tog{position:absolute; cursor:pointer; inset:0; background:var(--bg-3); border:1px solid var(--line); border-radius:20px; transition:.15s;}
+  .slider-tog:before{content:""; position:absolute; height:14px; width:14px; left:2px; top:2px; background:var(--text-lo); border-radius:50%; transition:.15s;}
+  input:checked + .slider-tog{background:var(--teal-dim); border-color:var(--teal);}
+  input:checked + .slider-tog:before{transform:translateX(16px); background:var(--teal);}
+
+  .btn-primary{
+    width:100%; background:linear-gradient(160deg,var(--teal),#249189); color:#04211d; border:none; border-radius:8px;
+    padding:12px; font-size:13px; font-weight:800; letter-spacing:0.3px; cursor:pointer; font-family:var(--sans);
+    box-shadow:0 4px 14px rgba(58,214,201,0.18); transition:transform .1s;
+  }
+  .btn-primary:active{transform:scale(0.98);}
+  .btn-secondary{
+    width:100%; background:var(--bg-2); color:var(--text-hi); border:1px solid var(--line); border-radius:8px;
+    padding:10px; font-size:12px; font-weight:700; cursor:pointer; font-family:var(--sans); margin-top:8px;
+  }
+  .btn-secondary:hover{border-color:var(--teal);}
+  .btn-secondary.danger{color:var(--crit); border-color:#5b2a27;}
+
+  /* ---------- CENTER MAP AREA ---------- */
+  #center-area{flex:1; display:flex; flex-direction:column; min-width:0;}
+  #map-wrap{flex:1; position:relative; min-height:0;}
+  #map{position:absolute; inset:0; background:#0a0e16;}
+  .leaflet-container{background:#0a0e16 !important; font-family:var(--sans);}
+
+  .map-legend{
+    position:absolute; bottom:12px; left:12px; z-index:500; background:rgba(15,21,34,0.92); border:1px solid var(--line);
+    border-radius:8px; padding:10px 12px; font-size:10.5px; backdrop-filter:blur(4px);
+  }
+  .map-legend .row{display:flex; align-items:center; gap:7px; margin-top:5px;}
+  .map-legend .row:first-of-type{margin-top:0;}
+  .map-legend .sw{width:10px; height:10px; border-radius:2px;}
+  .map-legend .title{font-weight:700; color:var(--text-mid); letter-spacing:0.4px; margin-bottom:6px; font-size:10px; text-transform:uppercase;}
+
+  .demo-banner{
+    position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:600;
+    background:rgba(224,72,63,0.14); border:1px solid var(--crit); color:#ffb4ae; padding:8px 18px;
+    border-radius:8px; font-size:12px; font-weight:700; display:none; align-items:center; gap:8px;
+    font-family:var(--mono); animation:pulse 1.5s infinite;
+  }
+  .demo-banner.show{display:flex;}
+
+  /* Timeline strip */
+  #timeline-strip{
+    flex:0 0 92px; border-top:1px solid var(--line); background:var(--bg-1); display:flex; align-items:stretch; padding:10px 16px; gap:8px;
+  }
+  .tl-point{
+    flex:1; border:1px solid var(--line); border-radius:8px; background:var(--bg-2); cursor:pointer; padding:8px 10px;
+    display:flex; flex-direction:column; justify-content:space-between; transition:border-color .15s, background .15s;
+  }
+  .tl-point.active{border-color:var(--teal); background:var(--bg-3);}
+  .tl-point .tl-time{font-size:10px; color:var(--text-mid); font-weight:700; font-family:var(--mono); letter-spacing:0.4px;}
+  .tl-point .tl-risk{font-size:12.5px; font-weight:800; margin-top:2px;}
+  .tl-point .tl-meta{font-size:9.5px; color:var(--text-lo); font-family:var(--mono);}
+
+  /* ---------- RIGHT SIDEBAR ---------- */
+  #right-sidebar{
+    width:320px; flex:0 0 320px; padding:12px; display:flex; flex-direction:column; gap:12px; overflow-y:auto;
+    border-left:1px solid var(--line); background:var(--bg-0);
+  }
+  .stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  .stat-card{
+    background:var(--bg-1); border:1px solid var(--line); border-radius:9px; padding:11px;
+  }
+  .stat-card .label{font-size:9.5px; color:var(--text-mid); font-weight:700; text-transform:uppercase; letter-spacing:0.4px;}
+  .stat-card .value{font-size:19px; font-weight:800; margin-top:5px; font-family:var(--mono);}
+  .stat-card.wide{grid-column:span 2;}
+  .risk-badge{
+    display:inline-block; padding:2px 9px; border-radius:5px; font-size:11px; font-weight:800; letter-spacing:0.4px;
+  }
+
+  .drain-stat-row{display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--line); font-size:12px;}
+  .drain-stat-row:last-child{border-bottom:none;}
+  .drain-stat-row .n{font-family:var(--mono); font-weight:700;}
+
+  .alert-item{
+    border-left:3px solid var(--line); background:var(--bg-2); border-radius:0 8px 8px 0; padding:9px 11px; margin-bottom:8px;
+  }
+  .alert-item:last-child{margin-bottom:0;}
+  .alert-item .tag{font-size:9.5px; font-weight:800; letter-spacing:0.5px; margin-bottom:4px; display:block;}
+  .alert-item p{font-size:12px; color:var(--text-hi); line-height:1.4;}
+  .alert-item.critical{border-color:var(--crit);}
+  .alert-item.critical .tag{color:var(--crit);}
+  .alert-item.warning{border-color:var(--mod);}
+  .alert-item.warning .tag{color:var(--mod);}
+  .alert-item.info{border-color:var(--teal);}
+  .alert-item.info .tag{color:var(--teal);}
+  .alert-actions{display:flex; gap:6px; margin-top:10px;}
+  .alert-actions button{
+    flex:1; background:var(--bg-3); border:1px solid var(--line); color:var(--text-hi); font-size:10px; font-weight:700;
+    padding:7px 4px; border-radius:6px; cursor:pointer; font-family:var(--sans);
+  }
+  .alert-actions button:hover{border-color:var(--teal); color:var(--teal);}
+  .toast{
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--bg-3);
+    border:1px solid var(--teal); color:var(--text-hi); padding:10px 18px; border-radius:8px; font-size:12.5px;
+    font-weight:600; z-index:2000; opacity:0; transition:.25s; pointer-events:none;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  .explain-empty{color:var(--text-lo); font-size:12px; line-height:1.5; padding:6px 0;}
+  .explain-row{margin-bottom:10px;}
+  .explain-row .erow-head{display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:5px;}
+  .explain-row .erow-head b{color:var(--text-hi); font-weight:600;}
+  .explain-row .erow-head span{font-family:var(--mono); color:var(--teal); font-weight:700;}
+  .bar-track{height:7px; background:var(--bg-2); border-radius:4px; overflow:hidden;}
+  .bar-fill{height:100%; background:linear-gradient(90deg,var(--teal),#e8823a);border-radius:4px;}
+  .explain-summary{margin-top:12px; padding:11px; background:var(--bg-2); border-radius:8px; font-size:12px; line-height:1.5; color:var(--text-mid); border:1px solid var(--line);}
+  .zone-title{font-size:14px; font-weight:700; margin-bottom:2px;}
+  .zone-sub{font-size:11px; color:var(--text-mid); margin-bottom:12px;}
+
+  .proto-tag{font-size:9px; color:var(--text-lo); background:var(--bg-2); border:1px solid var(--line); padding:2px 6px; border-radius:4px; font-weight:700; letter-spacing:0.3px;}
+
+  /* ---------- ARCHITECTURE / DATA PAGES ---------- */
+  #architecture-view, #data-view{
+    padding:32px 40px; overflow-y:auto; display:none; flex-direction:column; align-items:center; width:100%;
+  }
+  #architecture-view.active, #data-view.active{display:flex;}
+  .page-head{max-width:840px; width:100%; margin-bottom:28px;}
+  .page-head h2{font-size:24px; font-weight:800; letter-spacing:-0.3px;}
+  .page-head p{color:var(--text-mid); font-size:13.5px; margin-top:6px; max-width:620px; line-height:1.5;}
+
+  .pipeline{max-width:840px; width:100%; display:flex; flex-direction:column; align-items:stretch; margin-bottom:36px;}
+  .pipe-node{
+    background:var(--bg-1); border:1px solid var(--line); border-radius:10px; padding:14px 18px; display:flex; align-items:center; gap:14px;
+    position:relative;
+  }
+  .pipe-node .idx{font-family:var(--mono); font-size:11px; color:var(--teal); font-weight:700; width:22px; flex-shrink:0;}
+  .pipe-node .body h4{font-size:13.5px; font-weight:700;}
+  .pipe-node .body p{font-size:11.5px; color:var(--text-mid); margin-top:2px;}
+  .pipe-node .impl{margin-left:auto; font-size:9.5px; font-weight:800; letter-spacing:0.4px; padding:3px 8px; border-radius:5px; flex-shrink:0;}
+  .pipe-node .impl.built{color:var(--low); background:rgba(51,193,122,0.1); border:1px solid var(--teal-dim);}
+  .pipe-node .impl.planned{color:var(--text-mid); background:var(--bg-2); border:1px solid var(--line);}
+  .pipe-arrow{align-self:center; color:var(--text-lo); font-size:13px; padding:5px 0; font-family:var(--mono);}
+
+  .stack-grid{max-width:840px; width:100%; display:grid; grid-template-columns:repeat(5,1fr); gap:10px;}
+  .stack-col h5{font-size:10.5px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-mid); font-weight:700; margin-bottom:10px;}
+  .stack-col .chip{background:var(--bg-1); border:1px solid var(--line); border-radius:6px; padding:8px 10px; font-size:11.5px; margin-bottom:6px; font-family:var(--mono);}
+
+  .data-grid{max-width:900px; width:100%; display:grid; grid-template-columns:repeat(3,1fr); gap:14px;}
+  .data-card{background:var(--bg-1); border:1px solid var(--line); border-radius:10px; padding:16px;}
+  .data-card h4{font-size:13.5px; font-weight:700; margin-bottom:4px;}
+  .data-card p{font-size:11.5px; color:var(--text-mid); line-height:1.5; margin-bottom:12px;}
+  .data-src-tag{font-size:9.5px; font-weight:800; letter-spacing:0.4px; padding:3px 8px; border-radius:5px; display:inline-block;}
+  .data-src-tag.real{color:var(--low); background:rgba(51,193,122,0.1); border:1px solid var(--teal-dim);}
+  .data-src-tag.sim{color:var(--mod); background:rgba(227,181,69,0.1); border:1px solid #5b4a22;}
+
+  @media (max-width:1100px){
+    .stack-grid{grid-template-columns:repeat(3,1fr);}
+    .data-grid{grid-template-columns:repeat(2,1fr);}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HEADER -->
+  <header>
+    <div class="brand">
+      <div class="brand-mark">N</div>
+      <div class="brand-text">
+        <h1>NIRMAAN</h1>
+        <p>Urban Flood Nowcasting · Drainage + Rainfall Coupling</p>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button class="active" data-view="dashboard-view">Dashboard</button>
+      <button data-view="architecture-view">System Architecture</button>
+      <button data-view="data-view">Data Sources</button>
+    </nav>
+    <div class="status-block">
+      <div class="status-pill"><span class="status-dot"></span>SYSTEM OPERATIONAL</div>
+      <div class="status-time">Last updated: <b id="last-updated">--:--:--</b><br>Next nowcast: <b id="next-update">15:00</b></div>
+    </div>
+  </header>
+
+  <!-- DASHBOARD VIEW -->
+  <div id="dashboard-view" class="view active">
+
+    <!-- LEFT SIDEBAR -->
+    <aside id="left-sidebar">
+      <div class="panel">
+        <div class="panel-head"><h3>Rainfall Input</h3></div>
+        <div class="panel-body">
+          <div class="field">
+            <label>Rainfall Intensity <span class="val" id="rain-val">25 mm/hr</span></label>
+            <div class="seg-group" id="rain-group">
+              <button data-v="0">0</button>
+              <button data-v="10">10</button>
+              <button data-v="25" class="active">25</button>
+              <button data-v="50">50</button>
+              <button data-v="75">75</button>
+              <button data-v="110">100+</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Rainfall Duration <span class="val" id="dur-val">30 min</span></label>
+            <div class="seg-group" id="dur-group">
+              <button data-v="0.25">15m</button>
+              <button data-v="0.5" class="active">30m</button>
+              <button data-v="1">1h</button>
+              <button data-v="2">2h</button>
+              <button data-v="3">3h</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Drainage Capacity</h3></div>
+        <div class="panel-body">
+          <div class="seg-group" id="drain-group" style="flex-direction:column;">
+            <button data-v="0.45" class="active" style="width:100%; margin-bottom:4px;">Normal</button>
+            <button data-v="0.75" style="width:100%; margin-bottom:4px;">Reduced</button>
+            <button data-v="1.0" style="width:100%;">Severely Reduced</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Map Layers</h3></div>
+        <div class="panel-body" style="padding-top:2px;">
+          <div class="toggle-row"><span>Terrain / DEM</span><label class="switch"><input type="checkbox" id="tog-dem" checked><span class="slider-tog"></span></label></div>
+          <div class="toggle-row"><span>Drainage network</span><label class="switch"><input type="checkbox" id="tog-drain" checked><span class="slider-tog"></span></label></div>
+          <div class="toggle-row"><span>Rainfall overlay</span><label class="switch"><input type="checkbox" id="tog-rain" checked><span class="slider-tog"></span></label></div>
+          <div class="toggle-row"><span>Risk zones</span><label class="switch"><input type="checkbox" id="tog-risk" checked><span class="slider-tog"></span></label></div>
+          <div class="toggle-row"><span>Key locations</span><label class="switch"><input type="checkbox" id="tog-loc" checked><span class="slider-tog"></span></label></div>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="run-nowcast">▶ RUN NOWCAST</button>
+      <button class="btn-secondary" id="start-scenario">⚡ START FLOOD SCENARIO</button>
+      <button class="btn-secondary danger" id="reset-scenario">Reset to baseline</button>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Risk Score Model <span class="proto-tag">Demo</span></h3></div>
+        <div class="panel-body" style="font-size:11.5px; color:var(--text-mid); line-height:1.65;">
+          Risk = Rainfall × Duration × Terrain × Drainage Stress.
+          <div style="margin-top:8px; font-family:var(--mono); color:var(--text-hi); background:var(--bg-2); padding:8px; border-radius:6px; font-size:11px;">
+            score = R × D × T × S
+          </div>
+          A weighted illustrative model — not a calibrated hydrological simulation. Built to be swapped for a real hydraulic/ML model later.
+        </div>
+      </div>
+    </aside>
+
+    <!-- CENTER: MAP + TIMELINE -->
+    <div id="center-area">
+      <div id="map-wrap">
+        <div id="map"></div>
+        <div class="demo-banner" id="demo-banner">● LIVE FLOOD SCENARIO IN PROGRESS</div>
+        <div class="map-legend">
+          <div class="title">Flood Risk</div>
+          <div class="row"><span class="sw" style="background:var(--low)"></span>Low</div>
+          <div class="row"><span class="sw" style="background:var(--mod)"></span>Moderate</div>
+          <div class="row"><span class="sw" style="background:var(--high)"></span>High</div>
+          <div class="row"><span class="sw" style="background:var(--crit)"></span>Critical</div>
+        </div>
+      </div>
+      <div id="timeline-strip"></div>
+    </div>
+
+    <!-- RIGHT SIDEBAR -->
+    <aside id="right-sidebar">
+
+      <div class="stat-grid">
+        <div class="stat-card wide">
+          <div class="label">Current Risk</div>
+          <div class="value"><span class="risk-badge" id="stat-risk-badge">LOW</span></div>
+        </div>
+        <div class="stat-card"><div class="label">Waterlogging Zones</div><div class="value" id="stat-zones">0</div></div>
+        <div class="stat-card"><div class="label">Roads at Risk</div><div class="value" id="stat-roads">0</div></div>
+        <div class="stat-card"><div class="label">Drains Under Stress</div><div class="value" id="stat-drains">0</div></div>
+        <div class="stat-card"><div class="label">Pop. Exposed*</div><div class="value" id="stat-pop">0</div></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Rainfall Monitor</h3></div>
+        <div class="panel-body">
+          <div style="display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:10px;">
+            <div><span style="color:var(--text-mid)">Current </span><b id="rf-current" style="font-family:var(--mono)">25 mm/hr</b> <span class="proto-tag">LIVE</span></div>
+            <div><span style="color:var(--text-mid)">Forecast </span><b id="rf-forecast" style="font-family:var(--mono)">32 mm/hr</b> <span class="proto-tag">FCST</span></div>
+          </div>
+          <canvas id="rain-chart" height="90"></canvas>
+          <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-mid); margin-top:8px;">
+            <span>Last 1hr: <b id="rf-1hr" style="color:var(--text-hi); font-family:var(--mono)">12mm</b></span>
+            <span>Trend: <b id="rf-trend" style="color:var(--mod)">Increasing</b></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Drainage Network Status</h3></div>
+        <div class="panel-body">
+          <div class="drain-stat-row"><span>Total drains</span><span class="n" id="dr-total">18</span></div>
+          <div class="drain-stat-row"><span style="color:var(--low)">Normal</span><span class="n" id="dr-normal">14</span></div>
+          <div class="drain-stat-row"><span style="color:var(--mod)">Near capacity</span><span class="n" id="dr-near">3</span></div>
+          <div class="drain-stat-row"><span style="color:var(--high)">Over capacity</span><span class="n" id="dr-over">1</span></div>
+          <div class="drain-stat-row"><span style="color:var(--crit)">Blocked / critical</span><span class="n" id="dr-crit">0</span></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Terrain Analysis <span class="proto-tag">Demo terrain data</span></h3></div>
+        <div class="panel-body" style="font-size:11.5px; line-height:1.9; color:var(--text-mid);">
+          Lowest zone: <b style="color:var(--text-hi)">Karkardooma underpass belt</b><br>
+          Highest zone: <b style="color:var(--text-hi)">Nirman Vihar ridge</b><br>
+          Flow direction: <b style="color:var(--text-hi)">NE → SW</b><br>
+          Accumulation points: <b style="color:var(--text-hi)">3 identified</b>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Why is this area at risk?</h3></div>
+        <div class="panel-body" id="explain-body">
+          <div class="explain-empty">Select a flood risk zone on the map to see the factor breakdown behind its prediction.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Alerts</h3></div>
+        <div class="panel-body" id="alert-list"></div>
+      </div>
+
+    </aside>
+  </div>
+
+  <!-- ARCHITECTURE VIEW -->
+  <div id="architecture-view" class="view">
+    <div class="page-head">
+      <h2>System Architecture</h2>
+      <p>How NIRMAAN turns rainfall, terrain and drainage data into a hyperlocal flood nowcast. Solid-bordered stages are implemented in this prototype; the rest are planned for the production system.</p>
+    </div>
+    <div class="pipeline" id="pipeline"></div>
+    <div class="page-head" style="margin-bottom:16px;">
+      <h2 style="font-size:17px;">Technology Stack</h2>
+    </div>
+    <div class="stack-grid" id="stack-grid"></div>
+  </div>
+
+  <!-- DATA VIEW -->
+  <div id="data-view" class="view">
+    <div class="page-head">
+      <h2>Data Sources</h2>
+      <p>What powers each layer of the nowcast — and what's real versus simulated in this hackathon build.</p>
+    </div>
+    <div class="data-grid" id="data-grid"></div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   NIRMAAN — Urban Flood Nowcasting System (frontend prototype)
+   All data below is illustrative demo data for Laxmi Nagar, Delhi.
+   ============================================================ */
+
+const CENTER = [28.6358, 77.2745]; // Laxmi Nagar, Delhi (approx)
+
+/* ---------------- TAB NAV ---------------- */
+document.querySelectorAll('nav.tabs button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.view).classList.add('active');
+    if(btn.dataset.view === 'dashboard-view'){ setTimeout(()=>map.invalidateSize(), 50); }
+  });
+});
+
+/* ---------------- CLOCK ---------------- */
+function tickClock(){
+  document.getElementById('last-updated').textContent = new Date().toLocaleTimeString('en-IN',{hour12:false});
+}
+tickClock();
+let nextUpdateSec = 15*60;
+setInterval(()=>{
+  tickClock();
+  nextUpdateSec = Math.max(0, nextUpdateSec-1);
+  const m = String(Math.floor(nextUpdateSec/60)).padStart(2,'0');
+  const s = String(nextUpdateSec%60).padStart(2,'0');
+  document.getElementById('next-update').textContent = `${m}:${s}`;
+  if(nextUpdateSec===0) nextUpdateSec = 15*60;
+}, 1000);
+
+/* ---------------- MAP INIT ---------------- */
+const map = L.map('map', {zoomControl:true, attributionControl:false}).setView(CENTER, 15);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_matter/{z}/{x}/{y}{r}.png', {
+  maxZoom:19, subdomains:'abcd'
+}).addTo(map);
+L.control.attribution({position:'bottomright', prefix:false}).addAttribution('Basemap © CARTO / OpenStreetMap').addTo(map);
+
+/* ---------------- BOUNDARY ---------------- */
+const boundaryCoords = [
+  [28.6455,77.2680],[28.6470,77.2790],[28.6420,77.2870],[28.6330,77.2900],
+  [28.6250,77.2840],[28.6240,77.2740],[28.6290,77.2660],[28.6390,77.2630],[28.6455,77.2680]
+];
+L.polygon(boundaryCoords, {color:'#3ad6c9', weight:1.4, fillOpacity:0, dashArray:'4 5', opacity:0.6}).addTo(map);
+
+/* ---------------- ROADS ---------------- */
+const roadLayer = L.layerGroup().addTo(map);
+const roads = [
+  {name:'Vikas Marg', pts:[[28.6420,77.2650],[28.6390,77.2820],[28.6360,77.2890]]},
+  {name:'Karkardooma Rd', pts:[[28.6300,77.2680],[28.6350,77.2760],[28.6400,77.2800]]},
+  {name:'Nirman Vihar Link', pts:[[28.6280,77.2740],[28.6340,77.2780],[28.6395,77.2760]]},
+  {name:'Laxmi Nagar District Rd', pts:[[28.6260,77.2720],[28.6320,77.2700],[28.6390,77.2680]]},
+];
+roads.forEach(r=>{
+  L.polyline(r.pts, {color:'#4a5872', weight:3, opacity:0.55}).addTo(roadLayer);
+});
+
+/* ---------------- KEY LOCATIONS ---------------- */
+const locLayer = L.layerGroup().addTo(map);
+const locations = [
+  {name:'Laxmi Nagar Metro Station', type:'transit', lat:28.6358, lng:77.2762},
+  {name:'Govt. Boys Sr. Sec. School', type:'school', lat:28.6395, lng:77.2705},
+  {name:'East Delhi Municipal Hospital', type:'hospital', lat:28.6300, lng:77.2820},
+  {name:'Karkardooma Court Complex', type:'admin', lat:28.6420, lng:77.2760},
+  {name:'Nirman Vihar Market', type:'market', lat:28.6330, lng:77.2680},
+];
+const locIcons = {transit:'🚇', school:'🏫', hospital:'🏥', admin:'🏛️', market:'🛒'};
+locations.forEach(l=>{
+  const icon = L.divIcon({className:'', html:`<div style="background:#141c2e;border:1px solid #26324a;border-radius:6px;padding:3px 6px;font-size:13px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.4);">${locIcons[l.type]}</div>`, iconSize:null});
+  L.marker([l.lat,l.lng], {icon}).addTo(locLayer).bindTooltip(l.name, {direction:'top', offset:[0,-6]});
+});
+
+/* ---------------- PSEUDO-DEM (canvas heightmap) ---------------- */
+function makeNoiseCanvas(w,h,seedFn,colorFn){
+  const c = document.createElement('canvas'); c.width=w; c.height=h;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(w,h);
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const v = seedFn(x/w,y/h);
+      const [r,g,b,a] = colorFn(v);
+      const i=(y*w+x)*4;
+      img.data[i]=r; img.data[i+1]=g; img.data[i+2]=b; img.data[i+3]=a;
+    }
+  }
+  ctx.putImageData(img,0,0);
+  return c.toDataURL();
+}
+function valueNoise(x,y,freq,seed){
+  // cheap layered sine-based pseudo noise, deterministic
+  let v=0, amp=1, f=freq;
+  for(let i=0;i<4;i++){
+    v += amp*Math.sin(x*f*6.283+seed*i*3.1)*Math.cos(y*f*6.283+seed*i*1.7);
+    amp*=0.55; f*=1.9;
+  }
+  return (v+2)/4; // roughly 0..1
+}
+// Elevation: higher in NE (ridge), lower toward SW (Karkardooma underpass belt)
+const demUrl = makeNoiseCanvas(256,256,(u,v)=>{
+  const base = (1-u)*0.35 + (1-v)*0.35; // gradient NE high -> SW low
+  const noise = valueNoise(u,v,2.2,4.2)*0.4;
+  return Math.min(1, Math.max(0, base+noise));
+}, (v)=>{
+  // low = teal/green, mid = tan, high = brown
+  if(v<0.35) return [40,70,60,150];
+  if(v<0.55) return [90,110,70,150];
+  if(v<0.75) return [150,125,80,150];
+  return [120,90,65,160];
+});
+const demBounds = [[28.618,77.258],[28.652,77.298]];
+const demLayer = L.imageOverlay(demUrl, demBounds, {opacity:0.55, className:'dem-layer'}).addTo(map);
+
+/* Depression / accumulation markers */
+const accumPoints = [
+  {name:'Karkardooma underpass belt', lat:28.6280, lng:77.2810},
+  {name:'Nirman Vihar low pocket', lat:28.6310, lng:77.2700},
+  {name:'District Rd culvert junction', lat:28.6270, lng:77.2750},
+];
+const accumLayer = L.layerGroup().addTo(map);
+accumPoints.forEach(p=>{
+  L.circleMarker([p.lat,p.lng], {radius:4, color:'#3ad6c9', weight:1.5, fillColor:'#0a0e16', fillOpacity:0.6}).addTo(accumLayer)
+    .bindTooltip('Low point · '+p.name, {direction:'top'});
+});
+
+/* ---------------- RAINFALL OVERLAY (canvas) ---------------- */
+let rainOverlay = null;
+function buildRainOverlay(intensity){
+  const strength = Math.min(1, intensity/110);
+  const url = makeNoiseCanvas(200,200,(u,v)=>{
+    const n = valueNoise(u+0.3,v+0.7,3.4,9.1);
+    return n;
+  }, (v)=>{
+    const a = Math.floor(30 + strength*150*v);
+    return [58,150,214, Math.min(190,a)];
+  });
+  if(rainOverlay) map.removeLayer(rainOverlay);
+  rainOverlay = L.imageOverlay(url, [[28.615,77.255],[28.655,77.300]], {opacity:0.5});
+  if(document.getElementById('tog-rain').checked) rainOverlay.addTo(map);
+}
+
+/* ---------------- DRAINAGE NETWORK ---------------- */
+const drainSegments = [
+  {id:'D1', pts:[[28.6420,77.2650],[28.6390,77.2700]], vuln:0.3},
+  {id:'D2', pts:[[28.6390,77.2700],[28.6350,77.2760]], vuln:0.55},
+  {id:'D3', pts:[[28.6350,77.2760],[28.6300,77.2810]], vuln:0.8},
+  {id:'D4', pts:[[28.6300,77.2680],[28.6350,77.2720]], vuln:0.4},
+  {id:'D5', pts:[[28.6350,77.2720],[28.6310,77.2700]], vuln:0.7},
+  {id:'D6', pts:[[28.6280,77.2740],[28.6270,77.2790]], vuln:0.9},
+  {id:'D7', pts:[[28.6260,77.2720],[28.6300,77.2700]], vuln:0.35},
+  {id:'D8', pts:[[28.6320,77.2700],[28.6280,77.2760]], vuln:0.6},
+  {id:'D9', pts:[[28.6395,77.2760],[28.6360,77.2800]], vuln:0.5},
+  {id:'D10', pts:[[28.6240,77.2760],[28.6270,77.2750]], vuln:0.45},
+];
+const drainLayer = L.layerGroup().addTo(map);
+let drainPolylines = [];
+function statusColor(s){ return {normal:'#33c17a', near:'#e3b545', over:'#e8823a', critical:'#e0483f'}[s]; }
+function drainStatusFor(vuln, stress){
+  const s = vuln*0.5 + stress*0.5;
+  if(s<0.35) return 'normal';
+  if(s<0.6) return 'near';
+  if(s<0.8) return 'over';
+  return 'critical';
+}
+function renderDrainage(stress){
+  drainLayer.clearLayers();
+  drainPolylines = [];
+  const counts = {normal:0, near:0, over:0, critical:0};
+  drainSegments.forEach(seg=>{
+    const status = drainStatusFor(seg.vuln, stress);
+    counts[status]++;
+    const line = L.polyline(seg.pts, {color: statusColor(status), weight:4, opacity:0.85});
+    line.bindTooltip(`Drain ${seg.id} · ${status.toUpperCase()}`, {sticky:true});
+    line.addTo(drainLayer);
+    drainPolylines.push(line);
+  });
+  document.getElementById('dr-total').textContent = drainSegments.length;
+  document.getElementById('dr-normal').textContent = counts.normal;
+  document.getElementById('dr-near').textContent = counts.near;
+  document.getElementById('dr-over').textContent = counts.over;
+  document.getElementById('dr-crit').textContent = counts.critical;
+  return counts;
+}
+
+/* ---------------- RISK ZONES ---------------- */
+const zones = [
+  {id:'Z1', name:'Karkardooma Underpass Belt', terrainVuln:0.95,
+    poly:[[28.6300,77.2780],[28.6320,77.2830],[28.6265,77.2845],[28.6250,77.2800]]},
+  {id:'Z2', name:'Nirman Vihar Low Pocket', terrainVuln:0.8,
+    poly:[[28.6335,77.2670],[28.6355,77.2715],[28.6300,77.2725],[28.6285,77.2685]]},
+  {id:'Z3', name:'District Rd Culvert Junction', terrainVuln:0.7,
+    poly:[[28.6285,77.2730],[28.6300,77.2775],[28.6255,77.2780],[28.6245,77.2740]]},
+  {id:'Z4', name:'Vikas Marg Frontage', terrainVuln:0.4,
+    poly:[[28.6400,77.2760],[28.6420,77.2810],[28.6385,77.2825],[28.6370,77.2780]]},
+  {id:'Z5', name:'Metro Station Approach', terrainVuln:0.55,
+    poly:[[28.6345,77.2740],[28.6365,77.2785],[28.6335,77.2795],[28.6320,77.2755]]},
+  {id:'Z6', name:'Market Backlane Cluster', terrainVuln:0.3,
+    poly:[[28.6350,77.2650],[28.6370,77.2690],[28.6335,77.2700],[28.6320,77.2665]]},
+];
+const zoneLayer = L.layerGroup().addTo(map);
+let zonePolygons = {};
+let currentState = {}; // computed per-zone state cache
+
+function riskClass(score){
+  if(score<15) return {label:'LOW', color:'var(--low)', hex:'#33c17a'};
+  if(score<35) return {label:'MODERATE', color:'var(--mod)', hex:'#e3b545'};
+  if(score<60) return {label:'HIGH', color:'var(--high)', hex:'#e8823a'};
+  return {label:'CRITICAL', color:'var(--crit)', hex:'#e0483f'};
+}
+
+function computeFactors(intensity, duration, drainMult, terrainVuln){
+  const rainfallFactor = Math.min(1, intensity/110);
+  const durationFactor = 0.4 + 0.6*Math.min(1, duration/3);
+  const drainageStress = Math.min(1, drainMult * (0.5 + rainfallFactor*0.6));
+  const terrainVulnerability = terrainVuln;
+  const score = rainfallFactor * durationFactor * terrainVulnerability * drainageStress * 100;
+  return {rainfallFactor, durationFactor, drainageStress, terrainVulnerability, score};
+}
+
+function renderZones(intensity, duration, drainMult){
+  zoneLayer.clearLayers();
+  zonePolygons = {};
+  currentState = {};
+  let counts = {LOW:0, MODERATE:0, HIGH:0, CRITICAL:0};
+  zones.forEach(z=>{
+    const f = computeFactors(intensity, duration, drainMult, z.terrainVuln);
+    const rc = riskClass(f.score);
+    counts[rc.label]++;
+    currentState[z.id] = {...f, riskClass:rc, zone:z};
+    const poly = L.polygon(z.poly, {
+      color: rc.hex, weight:1.6, fillColor: rc.hex, fillOpacity:0.38
+    });
+    poly.on('click', ()=> showExplain(z.id));
+    poly.bindTooltip(`${z.name} · ${rc.label}`, {sticky:true});
+    poly.addTo(zoneLayer);
+    zonePolygons[z.id] = poly;
+  });
+  return counts;
+}
+
+function showExplain(zoneId){
+  const s = currentState[zoneId];
+  if(!s) return;
+  const accumCm = Math.round(s.score*0.6);
+  const onsetMin = Math.max(5, Math.round(60 - s.score*0.4));
+  const body = document.getElementById('explain-body');
+  body.innerHTML = `
+    <div class="zone-title">${s.zone.name}</div>
+    <div class="zone-sub">Risk: <b style="color:${s.riskClass.hex}">${s.riskClass.label}</b> · Est. accumulation ${accumCm} cm · Onset ~${onsetMin} min</div>
+    ${erow('Rainfall', s.rainfallFactor)}
+    ${erow('Terrain vulnerability', s.terrainVulnerability)}
+    ${erow('Drainage stress', s.drainageStress)}
+    ${erow('Accumulation potential', Math.min(1,s.score/100))}
+    <div class="explain-summary">High rainfall combined with low-lying terrain and reduced drainage capacity increases the probability of water accumulation in this zone. Primary factors: ${s.terrainVulnerability>0.6?'low terrain, ':''}${s.rainfallFactor>0.5?'high rainfall, ':''}${s.drainageStress>0.6?'drainage overload':'adequate drainage'}. Recommended action: avoid the affected road/area if risk is HIGH or CRITICAL.
+    <br><br><span class="proto-tag">Prototype estimate — not a certified forecast</span></div>
+  `;
+  map.flyTo(map.getBounds().contains(zonePolygons[zoneId].getBounds()) ? map.getCenter() : zonePolygons[zoneId].getBounds().getCenter(), Math.max(map.getZoom(),15), {duration:0.4});
+}
+function erow(label, val){
+  const pct = Math.round(val*100);
+  return `<div class="explain-row">
+    <div class="erow-head"><b>${label}</b><span>${pct}%</span></div>
+    <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+  </div>`;
+}
+
+/* ---------------- RAINFALL CHART ---------------- */
+const rainCtx = document.getElementById('rain-chart').getContext('2d');
+const rainChart = new Chart(rainCtx, {
+  type:'line',
+  data:{
+    labels:['-50m','-40m','-30m','-20m','-10m','Now','+10m','+20m'],
+    datasets:[{
+      data:[8,10,14,18,22,25,29,32],
+      borderColor:'#3ad6c9', backgroundColor:'rgba(58,214,201,0.12)', fill:true, tension:0.35, pointRadius:0, borderWidth:2
+    }]
+  },
+  options:{
+    responsive:true,
+    plugins:{legend:{display:false}},
+    scales:{
+      x:{ticks:{color:'#6b768e', font:{size:9}}, grid:{color:'#1a2438'}},
+      y:{ticks:{color:'#6b768e', font:{size:9}}, grid:{color:'#1a2438'}}
+    }
+  }
+});
+function updateRainChart(intensity){
+  const hist = [0.32,0.4,0.56,0.72,0.88,1.0].map(f=>Math.round(intensity*f));
+  const fc = [1.12,1.28].map(f=>Math.round(intensity*f));
+  rainChart.data.datasets[0].data = [...hist, ...fc];
+  rainChart.update();
+  document.getElementById('rf-current').textContent = intensity+' mm/hr';
+  document.getElementById('rf-forecast').textContent = fc[1]+' mm/hr';
+  document.getElementById('rf-1hr').textContent = Math.round(intensity*0.8)+'mm';
+  document.getElementById('rf-trend').textContent = intensity>=50?'Increasing':(intensity<=10?'Stable':'Increasing');
+}
+
+/* ---------------- TIMELINE ---------------- */
+const timelineSteps = [
+  {label:'NOW', mins:0},
+  {label:'+15 MIN', mins:15},
+  {label:'+30 MIN', mins:30},
+  {label:'+45 MIN', mins:45},
+  {label:'+60 MIN', mins:60},
+];
+let activeTimelineIdx = 0;
+function renderTimeline(intensity, duration, drainMult){
+  const strip = document.getElementById('timeline-strip');
+  strip.innerHTML = '';
+  timelineSteps.forEach((t, i)=>{
+    const projFactor = 1 + i*0.18; // simple projection of worsening conditions
+    const counts = zones.reduce((acc,z)=>{
+      const f = computeFactors(Math.min(120,intensity*projFactor), duration+i*0.08, Math.min(1,drainMult*(1+i*0.05)), z.terrainVuln);
+      const rc = riskClass(f.score);
+      acc[rc.label] = (acc[rc.label]||0)+1;
+      acc.maxScore = Math.max(acc.maxScore||0, f.score);
+      return acc;
+    }, {});
+    const overallRisk = riskClass(counts.maxScore||0);
+    const affected = (counts.HIGH||0)+(counts.CRITICAL||0);
+    const el = document.createElement('div');
+    el.className = 'tl-point'+(i===activeTimelineIdx?' active':'');
+    el.innerHTML = `<div class="tl-time">${t.label}</div>
+      <div class="tl-risk" style="color:${overallRisk.hex}">${overallRisk.label}</div>
+      <div class="tl-meta">${affected} zones · drainage stress ${Math.round(Math.min(100,drainMult*100*(1+i*0.1)))}%</div>`;
+    el.addEventListener('click', ()=>{
+      activeTimelineIdx = i;
+      renderTimeline(intensity, duration, drainMult);
+      runNowcast(Math.min(120,intensity*projFactor), duration+i*0.08, Math.min(1,drainMult*(1+i*0.05)), true);
+    });
+    strip.appendChild(el);
+  });
+}
+
+/* ---------------- ALERTS ---------------- */
+function renderAlerts(counts, intensity, drainMult){
+  const list = document.getElementById('alert-list');
+  let html = '';
+  if(counts.CRITICAL>0){
+    html += `<div class="alert-item critical"><span class="tag">CRITICAL</span><p>High water accumulation predicted near ${counts.CRITICAL} low-lying zone${counts.CRITICAL>1?'s':''}.</p></div>`;
+  }
+  if(drainMult>0.6 || counts.HIGH>0 || counts.CRITICAL>0){
+    html += `<div class="alert-item warning"><span class="tag">WARNING</span><p>Drainage capacity expected to be exceeded under current rainfall conditions.</p></div>`;
+  }
+  html += `<div class="alert-item info"><span class="tag">INFO</span><p>Rainfall intensity is ${intensity>=50?'increasing':'stable'}. Next nowcast update scheduled in 15 minutes.</p></div>`;
+  html += `<div class="alert-actions">
+      <button onclick="showToast('Authorities notified (simulated)')">Notify Authorities</button>
+      <button onclick="showToast('Citizen alert broadcast (simulated)')">Notify Citizens</button>
+      <button onclick="showToast('Risk report exported (simulated)')">Export Report</button>
+    </div>`;
+  list.innerHTML = html;
+}
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ---------------- MAIN NOWCAST RUN ---------------- */
+function runNowcast(intensity, duration, drainMult, silent){
+  const zoneCounts = renderZones(intensity, duration, drainMult);
+  const drainCounts = renderDrainage(Math.min(1, drainMult*(0.5+intensity/110)));
+  buildRainOverlay(intensity);
+  updateRainChart(Math.round(intensity));
+
+  // Overall risk = worst zone
+  let overall = {label:'LOW', hex:'#33c17a'};
+  ['CRITICAL','HIGH','MODERATE','LOW'].some(lvl=>{
+    if(zoneCounts[lvl]>0){ overall = riskClass({LOW:5,MODERATE:20,HIGH:45,CRITICAL:75}[lvl]); return true; }
+    return false;
+  });
+  document.getElementById('stat-risk-badge').textContent = overall.label;
+  document.getElementById('stat-risk-badge').style.background = overall.hex+'26';
+  document.getElementById('stat-risk-badge').style.color = overall.hex;
+  document.getElementById('stat-risk-badge').style.border = '1px solid '+overall.hex;
+
+  document.getElementById('stat-zones').textContent = zoneCounts.HIGH + zoneCounts.CRITICAL;
+  document.getElementById('stat-roads').textContent = Math.max(1, Math.round((zoneCounts.HIGH+zoneCounts.CRITICAL*1.5)));
+  document.getElementById('stat-drains').textContent = drainCounts.over + drainCounts.critical;
+  document.getElementById('stat-pop').textContent = (( (zoneCounts.HIGH*1200)+(zoneCounts.CRITICAL*2600) )).toLocaleString('en-IN');
+
+  renderAlerts(zoneCounts, intensity, drainMult);
+  if(!silent) renderTimeline(intensity, duration, drainMult);
+
+  document.getElementById('last-updated').textContent = new Date().toLocaleTimeString('en-IN',{hour12:false});
+  nextUpdateSec = 15*60;
+}
+
+/* ---------------- CONTROLS WIRING ---------------- */
+let state = {intensity:25, duration:0.5, drain:0.45};
+
+function wireSegGroup(id, key, labelId, suffix, updater){
+  document.querySelectorAll('#'+id+' button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('#'+id+' button').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      state[key] = parseFloat(btn.dataset.v);
+      if(labelId) document.getElementById(labelId).textContent = updater(state[key]);
+    });
+  });
+}
+wireSegGroup('rain-group','intensity','rain-val','', v=> (v>=110?'100+ mm/hr':v+' mm/hr'));
+wireSegGroup('dur-group','duration','dur-val','', v=> v<1 ? Math.round(v*60)+' min' : v+' hour'+(v>1?'s':''));
+wireSegGroup('drain-group','drain', null, '', ()=>'');
+
+document.getElementById('run-nowcast').addEventListener('click', ()=>{
+  activeTimelineIdx = 0;
+  runNowcast(state.intensity, state.duration, state.drain);
+  showToast('Nowcast recalculated');
+});
+
+/* Layer toggles */
+document.getElementById('tog-dem').addEventListener('change', e=>{
+  e.target.checked ? demLayer.addTo(map) : map.removeLayer(demLayer);
+});
+document.getElementById('tog-drain').addEventListener('change', e=>{
+  e.target.checked ? drainLayer.addTo(map) : map.removeLayer(drainLayer);
+});
+document.getElementById('tog-rain').addEventListener('change', e=>{
+  if(!rainOverlay) return;
+  e.target.checked ? rainOverlay.addTo(map) : map.removeLayer(rainOverlay);
+});
+document.getElementById('tog-risk').addEventListener('change', e=>{
+  e.target.checked ? zoneLayer.addTo(map) : map.removeLayer(zoneLayer);
+});
+document.getElementById('tog-loc').addEventListener('change', e=>{
+  e.target.checked ? locLayer.addTo(map) : map.removeLayer(locLayer);
+});
+
+/* ---------------- DEMO SCENARIO ---------------- */
+let scenarioRunning = false;
+document.getElementById('start-scenario').addEventListener('click', ()=>{
+  if(scenarioRunning) return;
+  scenarioRunning = true;
+  document.getElementById('demo-banner').classList.add('show');
+  const steps = [
+    {i:25, d:0.5, dr:0.45},
+    {i:50, d:1, dr:0.6},
+    {i:80, d:1.5, dr:0.8},
+    {i:110, d:2, dr:1.0},
+  ];
+  let idx = 0;
+  const stepFn = ()=>{
+    if(idx>=steps.length){
+      scenarioRunning = false;
+      document.getElementById('demo-banner').classList.remove('show');
+      showToast('Flood scenario complete');
+      return;
+    }
+    const s = steps[idx];
+    runNowcast(s.i, s.d, s.dr);
+    idx++;
+    setTimeout(stepFn, 2600);
+  };
+  stepFn();
+});
+document.getElementById('reset-scenario').addEventListener('click', ()=>{
+  scenarioRunning = false;
+  document.getElementById('demo-banner').classList.remove('show');
+  state = {intensity:25, duration:0.5, drain:0.45};
+  document.querySelectorAll('#rain-group button').forEach(b=>b.classList.toggle('active', b.dataset.v==='25'));
+  document.querySelectorAll('#dur-group button').forEach(b=>b.classList.toggle('active', b.dataset.v==='0.5'));
+  document.querySelectorAll('#drain-group button').forEach(b=>b.classList.toggle('active', b.dataset.v==='0.45'));
+  document.getElementById('rain-val').textContent = '25 mm/hr';
+  document.getElementById('dur-val').textContent = '30 min';
+  activeTimelineIdx = 0;
+  runNowcast(25,0.5,0.45);
+});
+
+/* ---------------- ARCHITECTURE PAGE CONTENT ---------------- */
+const pipelineSteps = [
+  {title:'Rain / Weather Data', desc:'Live and forecast rainfall intensity feeding the model.', impl:'planned'},
+  {title:'Data Ingestion', desc:'Normalizes rainfall, terrain and drainage inputs into a common schema.', impl:'built'},
+  {title:'DEM + Terrain Processing', desc:'Derives elevation, slope and flow direction from SRTM DEM tiles.', impl:'built'},
+  {title:'Drainage Network Analysis', desc:'Approximates drainage segments and capacity using road-network + CPHEEO thresholds.', impl:'built'},
+  {title:'Rainfall + Drainage Coupling', desc:'Combines rainfall load against local drainage capacity per zone.', impl:'built'},
+  {title:'Flood Risk Engine', desc:'Weighted demonstration scoring model — swappable for a calibrated hydraulic/ML model.', impl:'built'},
+  {title:'GIS Nowcast Map', desc:'Renders risk zones, drainage stress and terrain on an interactive Leaflet map.', impl:'built'},
+  {title:'Alert Generation', desc:'Triggers critical/warning/info alerts and simulated authority/citizen notifications.', impl:'built'},
+];
+const pipeEl = document.getElementById('pipeline');
+pipelineSteps.forEach((s,i)=>{
+  const node = document.createElement('div');
+  node.className='pipe-node';
+  node.innerHTML = `<div class="idx">${String(i+1).padStart(2,'0')}</div>
+    <div class="body"><h4>${s.title}</h4><p>${s.desc}</p></div>
+    <div class="impl ${s.impl}">${s.impl==='built'?'PROTOTYPED':'PLANNED'}</div>`;
+  pipeEl.appendChild(node);
+  if(i<pipelineSteps.length-1){
+    const arrow = document.createElement('div');
+    arrow.className='pipe-arrow'; arrow.textContent='↓';
+    arrow.style.textAlign='center';
+    pipeEl.appendChild(arrow);
+  }
+});
+
+const stack = {
+  Data:['DEM (SRTM)','Rainfall feed','Drainage network','GIS layers'],
+  Processing:['Python','GeoPandas','Rasterio','NumPy / GDAL'],
+  Prediction:['Hydraulic/hydrological model','ML enhancement (planned)'],
+  Visualization:['Leaflet','React (production)'],
+  Backend:['Python FastAPI','PostgreSQL + PostGIS']
+};
+const stackGrid = document.getElementById('stack-grid');
+Object.entries(stack).forEach(([col, items])=>{
+  const div = document.createElement('div'); div.className='stack-col';
+  div.innerHTML = `<h5>${col}</h5>` + items.map(it=>`<div class="chip">${it}</div>`).join('');
+  stackGrid.appendChild(div);
+});
+
+/* ---------------- DATA SOURCES PAGE ---------------- */
+const dataSources = [
+  {name:'DEM / Elevation', desc:'SRTM 1 Arc-Second elevation tiles for the Laxmi Nagar demonstration area, processed in QGIS.', tag:'real'},
+  {name:'Rainfall', desc:'This prototype uses simulated rainfall intensity/duration inputs in place of a live weather API feed.', tag:'sim'},
+  {name:'Drainage Network', desc:'Approximated using roads-as-surface-drainage plus CPHEEO pipe capacity thresholds — not actual sewer network maps.', tag:'sim'},
+  {name:'Roads', desc:'Simplified road geometry for the demonstration area, illustrative rather than survey-accurate.', tag:'sim'},
+  {name:'Administrative Boundaries', desc:'Approximate Laxmi Nagar ward boundary for demo framing.', tag:'sim'},
+  {name:'Population / Exposure', desc:'Estimated exposure figures for illustration only — not derived from census micro-data.', tag:'sim'},
+];
+const dataGrid = document.getElementById('data-grid');
+dataSources.forEach(d=>{
+  const card = document.createElement('div'); card.className='data-card';
+  card.innerHTML = `<h4>${d.name}</h4><p>${d.desc}</p><span class="data-src-tag ${d.tag}">${d.tag==='real'?'REAL DATA USED':'SIMULATED / DEMO DATA'}</span>`;
+  dataGrid.appendChild(card);
+});
+
+/* ---------------- INITIAL RUN ---------------- */
+renderTimeline(state.intensity, state.duration, state.drain);
+runNowcast(state.intensity, state.duration, state.drain, true);
+showExplain('Z1');
+setTimeout(()=>map.invalidateSize(), 200);
+</script>
+</body>
+</html>
